@@ -151,6 +151,14 @@ check('restore puts the profile files back', restored.ok === true && afterRestor
 const status = tools.get('plugin_guard_status').execute({})
 check('status reports the launcher and profile', status.report.includes('runtime') && status.report.includes(profileDir), status.report.slice(0, 300))
 
+// An untracked change (Web UI install) triggers a static re-audit on its own.
+const changedHandler = events.get('plugin-manager/changed')
+check('subscribes to changed', typeof changedHandler === 'function')
+changedHandler?.({ reason: 'install' })
+await new Promise((resolve) => setTimeout(resolve, 500))
+const statusAfterChange = tools.get('plugin_guard_status').execute({})
+check('changed triggers an automatic static re-audit', statusAfterChange.report.includes('自动静态复核') && statusAfterChange.report.includes('1 个插件'), statusAfterChange.report.slice(0, 400))
+
 // Without the environment variable the profile comes from the profileContext service.
 const savedProfileEnv = process.env.DSH_PROFILE_DIR
 delete process.env.DSH_PROFILE_DIR

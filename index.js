@@ -52,6 +52,7 @@ const MAX_HISTORY = 20
 const state = {
   checks: [],
   auto: [],
+  lastAutoAudit: undefined,
   lastError: undefined,
   startedAt: Date.now(),
 }
@@ -258,6 +259,40 @@ async function listBundles(ctx) {
   const manager = ctx.get('pluginManager')
   if (manager === undefined || manager === null || typeof manager.listBundles !== 'function') return undefined
   return manager.listBundles()
+}
+
+/**
+ * Cheap re-audit after an untracked profile change: every bundle's manifest and
+ * runtime graph, no boot. Runs on `plugin-manager/changed` so a change made from
+ * the Web UI still gets a verdict recorded even though no tool saw it.
+ * @returns the audit summary stored on `state.lastAutoAudit`.
+ */
+async function autoStaticAudit(ctx, options) {
+  const bundles = await listBundles(ctx)
+  if (bundles === undefined) return undefined
+  const names = bundles.map((bundle) => bundle.name).filter((value) => typeof value === 'string')
+  const failures = []
+  for (const bundleName of names) {
+    try {
+      const resolved = resolveTarget(bundleName, {
+        profileDir: options.profileDir,
+        installationDir: options.installationDir,
+        runtimeVersion: options.version,
+      })
+      if (resolved.ok !== true) continue
+      const statics = staticFindings(resolved, options.version)
+      const fails = statics.findings.filter((item) => item.level === LEVEL.FAIL)
+      if (fails.length > 0) failures.push({ name: bundleName, codes: fails.map((item) => item.code) })
+    } catch {
+      continue
+    }
+  }
+  const summary = { at: new Date().toISOString(), bundles: names.length, failures }
+  state.lastAutoAudit = summary
+  if (failures.length > 0) {
+    console.warn(`[plugin-guard] 静态复核：${failures.length} 个插件有失败项 — ${failures.map((item) => `${item.name}(${item.codes[0]})`).join(', ')}`)
+  }
+  return summary
 }
 
 /** Tool output for one check. */
@@ -562,6 +597,11 @@ export function apply(ctx) {
       lines.push('最近的手动检查：')
       if (state.checks.length === 0) lines.push('- 还没有运行过检查')
       for (const item of state.checks.slice(0, 8)) lines.push(`- ${new Date(item.at).toLocaleTimeString()} · ${item.kind} · ${item.target} · ${item.verdict}`)
+      if (state.lastAutoAudit !== undefined) {
+        lines.push('')
+        lines.push(`最近一次变更后的自动静态复核：${state.lastAutoAudit.at} · ${state.lastAutoAudit.bundles} 个插件 · 失败 ${state.lastAutoAudit.failures.length} 个`)
+        for (const failure of state.lastAutoAudit.failures.slice(0, 8)) lines.push(`- ${failure.name}：${failure.codes.join(', ')}`)
+      }
       if (state.lastError !== undefined) lines.push(`\n最近一次错误：${state.lastError}`)
       return { report: lines.join('\n') }
     },
@@ -632,6 +672,9 @@ export function apply(ctx) {
       } catch (error) {
         state.lastError = `changed: ${String(error?.message ?? error)}`
       }
+      autoStaticAudit(ctx, baseOptions).catch((error) => {
+        state.lastError = `auto audit: ${String(error?.message ?? error)}`
+      })
     })
     return () => {
       for (const dispose of disposers) {

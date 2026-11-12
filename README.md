@@ -13,8 +13,10 @@ DSH 的 `plugin_manager` 已经会在安装前拦掉 `engines.dsh` / peer 版本
 | 模块 import 抛异常 | 启动继续，`warning: 1 entry did not activate`，插件被跳过 | `SKIPPED`（装了也不生效） |
 | `apply()` 抛异常 | 同上，启动继续 | `SKIPPED` |
 | 模块顶层 `process.exit(9)` | 进程退出码 9，Web 端口不起 | `CRASH_EXIT`（会崩） |
-| 模块顶层死循环 | 进程不返回，Web 永不起 | `CRASH_HANG`（会卡死） |
-| bundle patch 声明错误 | bundle 被跳过，启动继续 | `SKIPPED` |
+| `apply()` 里 `process.exit(9)` | 进程退出码 9 | `CRASH_EXIT`（会崩） |
+| 模块顶层或 `apply()` 里死循环 | 进程不返回，Web 永不起 | `CRASH_HANG`（会卡死） |
+| 声明 `dsh.client` 但客户端文件缺失 | Web 启动进程退出码 1 | `CRASH_EXIT`（会崩） |
+| bundle patch 声明错误 | bundle 被跳过或安装即拒绝 | `SKIPPED` / `INSTALL_FAILED` |
 | 正常插件 | 约 2–3 s 起 Web | `OK` |
 
 也就是说：**“能 import”不等于“能启动”，“不崩”也可能“白装”**。只有真实启动能同时回答这两件事。
@@ -108,7 +110,8 @@ plugin_guard_audit   depth: boot   limit: 5
 2. `<启动器> <probe> --from-default-profile web --dump-config` 建 profile（约 0.3 s）；
 3. `<启动器> plugin --profile <probe> add <spec>` 装候选（本地 `link:` 约 1 s，registry 初次取决于网络）；
 4. `<启动器> --profile <probe> --port 0 --no-open` 真实启动，轮询 stdout 的 Web 地址；
-5. 结束：`taskkill /T /F` 杀进程树、删临时 `DSH_HOME`；超过 2 小时的残留目录在下次运行时清理。
+5. 地址必须**真实 HTTP 可连通**才算启动成功（插件自己打印的假地址骗不过探针）；
+6. 结束：`taskkill /T /F` 杀进程树、删临时 `DSH_HOME`；超过 2 小时的残留目录在下次运行时清理。
 
 子进程环境：`ELECTRON_RUN_AS_NODE=1`、独立 `DSH_HOME`，并剥掉继承的 `DSH_PROFILE*` / `DSH_SESSION_ID` / `DSH_WEB_URL` / `DSH_SHELL`，避免连到正在运行的实例。
 
@@ -123,8 +126,9 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 
 | 检查 | 结果 |
 |---|---|
-| `node tests\selftest.mjs` | 38/38 通过（含 4 类夹具的真实探针：OK / SKIPPED / CRASH_EXIT / CRASH_HANG，且探针目录零残留） |
-| `node tests\tooltest.mjs` | 23/23 通过（六个工具、带闸安装拦截、快照与恢复、profile 服务回退） |
+| `node tests\selftest.mjs` | 56/56 通过（含 10 类真实启动夹具：OK / SKIPPED / CRASH_EXIT / CRASH_HANG / EXITED_CLEAN / INSTALL_FAILED，探针目录零残留） |
+| `node tests\tooltest.mjs` | 25/25 通过（六个工具、带闸安装拦截、快照与恢复、自动静态复核、profile 服务回退） |
+| 对抗矩阵 `tests\REDTEAM.md` | 11 个对手夹具全部判对；期间修掉「假 Web 地址」「stderr 形状噪声」「探针自伤竞态」三个缺陷 |
 | 运行中实例 `plugin_guard_check` 坏包 | `CRASH_EXIT`，退出码 9，create 345ms · install 1082ms · boot 2479ms |
 | 运行中实例 `plugin_guard_check` 正常包 | `OK`，启动成功 `http://127.0.0.1:61086/…`，create 330ms · install 1027ms · boot 3717ms |
 | 安装到 Desktop profile | `dsh plugin --profile desktop add link:…` 成功，六个工具在运行中的会话里立即出现 |
@@ -140,8 +144,9 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 
 ```powershell
 cd D:\dsh-tools\dsh-plugin-guard
-node tests\selftest.mjs   # 38 项：semver / manifest / scan / plan / 真实探针四类
-node tests\tooltest.mjs   # 22 项：六个工具的判定、带闸安装、快照与恢复
+node tests\selftest.mjs   # 56 项：semver / manifest / scan / plan + 10 类真实启动夹具
+node tests\tooltest.mjs   # 25 项：六个工具的判定、带闸安装、快照与恢复、自动复核
+node tests\redteam-run.mjs rt-good rt-spoof-url …   # 对抗矩阵，见 tests/REDTEAM.md
 ```
 
 目录：

@@ -110,6 +110,13 @@ if (probeLauncher.ok !== true) {
     { name: 'import-error', expect: VERDICT.SKIPPED },
     { name: 'crash-exit', expect: VERDICT.CRASH_EXIT },
     { name: 'hang', expect: VERDICT.CRASH_HANG },
+    // Adversarial: the shape of each failure the boot probe must not miss.
+    { name: 'rt-exit0-import', expect: VERDICT.EXITED_CLEAN },
+    { name: 'rt-throw-apply', expect: VERDICT.SKIPPED },
+    { name: 'rt-exit9-apply', expect: VERDICT.CRASH_EXIT },
+    { name: 'rt-spoof-url', expect: VERDICT.CRASH_HANG, timeoutMs: 12_000 },
+    { name: 'rt-stderr-noise', expect: VERDICT.OK },
+    { name: 'rt-client-missing', expect: VERDICT.CRASH_EXIT },
   ]
   for (const item of cases) {
     const dir = path.join(fixtures, item.name)
@@ -117,7 +124,7 @@ if (probeLauncher.ok !== true) {
     const analysis = analyzeManifest(dir, { runtimeVersion, platform: 'win32' })
     const scan = scanPackage(dir, { entries: [analysis.facts.entryPath] })
     const findings = [...resolved.findings, ...analysis.findings, ...scan.findings]
-    const probe = await runBootProbe(resolved, { launcher: probeLauncher, bootTimeoutMs: item.name === 'hang' ? 20_000 : 60_000 })
+    const probe = await runBootProbe(resolved, { launcher: probeLauncher, bootTimeoutMs: item.timeoutMs ?? 60_000 })
     const verdict = verdictFrom({ findings, probe })
     const result = { target: item.name, resolved, depth: 'boot', verdict, findings, probe }
     check(`probe ${item.name} → ${item.expect}`, verdict === item.expect, `${verdict} (probe ${probe.status} code ${probe.exitCode})`)

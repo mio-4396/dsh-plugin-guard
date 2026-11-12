@@ -13,8 +13,13 @@
 | 插件 `apply()` 抛异常 | 同上，启动继续 | `SKIPPED` |
 | 插件模块顶层 `process.exit(9)` | 进程退出码 9，Web 端口未起 | `CRASH_EXIT` |
 | 插件模块顶层死循环 | 进程不返回，端口永不起 | `CRASH_HANG` |
-| bundle（`dsh.bundle.patch`）声明无效 | 该 bundle 被跳过，启动继续 | `SKIPPED` |
-| `engines.dsh` / DSH peer 不满足 | 插件行被拒绝，启动继续（安装时管理器会先拒装） | `DENIED` |
+| `apply()` 抛异常 | 启动继续，该行报 `did not activate` | `SKIPPED` |
+| `apply()` 里 `process.exit(9)` | 进程退出码 9 | `CRASH_EXIT` |
+| `apply()` 里死循环 | Web 端口不起 | `CRASH_HANG` |
+| 声明 `dsh.client` 但客户端文件缺失 | Web 启动 exit=1 | `CRASH_EXIT` |
+| 插件自己打印假 Web 地址 | 真地址未起；假地址 HTTP 不通 | `CRASH_HANG`（探针须做 HTTP 校验） |
+| bundle（`dsh.bundle.patch`）声明无效 | 安装阶段即被拒绝 | `INSTALL_FAILED` |
+| `engines.dsh` / DSH peer 不满足 | 安装阶段即被拒绝，插件行被拒绝 | `INSTALL_FAILED` / `DENIED` |
 | 正常插件 | 约 2–3 s 起 Web，打印 `http://127.0.0.1:<port>` | `OK` |
 
 **结论**：唯一可靠的“会不会崩”判据是**真实启动**。模块能否 import、patch 能否解析都只是线索。

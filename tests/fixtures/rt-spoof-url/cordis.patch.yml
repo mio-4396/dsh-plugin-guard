@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-spoof-url
+      name: rt-spoof-url
+      config: {}

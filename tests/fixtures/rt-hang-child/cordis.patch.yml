@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-hang-child
+      name: rt-hang-child
+      config: {}

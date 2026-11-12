@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-client-missing
+      name: rt-client-missing
+      config: {}

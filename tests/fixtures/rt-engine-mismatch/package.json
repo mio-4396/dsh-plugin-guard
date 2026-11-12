@@ -1,0 +1,17 @@
+{
+  "name": "rt-engine-mismatch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "engines": {
+    "dsh": ">=9.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

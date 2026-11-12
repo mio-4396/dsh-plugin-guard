@@ -1,0 +1,4 @@
+- insert:
+    - id: plugin-guard
+      name: dsh-plugin-guard
+      config: {}

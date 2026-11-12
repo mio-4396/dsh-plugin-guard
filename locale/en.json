@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Plugin guard",
+    "description": "Preflights a plugin install or update by booting it in an isolated probe profile, and refuses changes that would crash DSH or leave the plugin skipped."
+  }
+}

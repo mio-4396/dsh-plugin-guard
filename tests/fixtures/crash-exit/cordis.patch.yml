@@ -1,0 +1,4 @@
+- insert:
+    - id: guard-fixture-crash-exit
+      name: guard-fixture-crash-exit
+      config: {}

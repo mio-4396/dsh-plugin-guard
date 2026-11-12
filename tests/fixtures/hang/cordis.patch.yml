@@ -1,0 +1,4 @@
+- insert:
+    - id: guard-fixture-hang
+      name: guard-fixture-hang
+      config: {}

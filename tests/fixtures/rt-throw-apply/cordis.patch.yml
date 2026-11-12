@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-throw-apply
+      name: rt-throw-apply
+      config: {}

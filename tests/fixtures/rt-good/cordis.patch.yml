@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-good
+      name: rt-good
+      config: {}

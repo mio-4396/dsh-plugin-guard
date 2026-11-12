@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-exit0-import
+      name: rt-exit0-import
+      config: {}

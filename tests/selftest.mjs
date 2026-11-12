@@ -7,13 +7,13 @@
  * because one fixture has to reach a boot timeout.
  */
 
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { analyzeManifest, LEVEL } from '../lib/manifest.mjs'
 import { resolveTarget } from '../lib/plan.mjs'
-import { createLauncher, PROBE_ROOT, runBootProbe } from '../lib/probe.mjs'
+import { createLauncher, runBootProbe } from '../lib/probe.mjs'
 import { isCrash, renderCheck, verdictFrom, VERDICT } from '../lib/report.mjs'
 import { scanPackage } from '../lib/scan.mjs'
 import { compareVersions, isValidRange, satisfies } from '../lib/semver.mjs'
@@ -115,6 +115,7 @@ if (probeLauncher.ok !== true) {
     { name: 'rt-throw-apply', expect: VERDICT.SKIPPED },
     { name: 'rt-exit9-apply', expect: VERDICT.CRASH_EXIT },
     { name: 'rt-spoof-url', expect: VERDICT.CRASH_HANG, timeoutMs: 12_000 },
+    { name: 'rt-spoof-url-sync', expect: VERDICT.CRASH_HANG, timeoutMs: 12_000 },
     { name: 'rt-stderr-noise', expect: VERDICT.OK },
     { name: 'rt-client-missing', expect: VERDICT.CRASH_EXIT },
   ]
@@ -134,12 +135,8 @@ if (probeLauncher.ok !== true) {
       check(`probe ${item.name} renders evidence`, renderCheck(result).includes('崩溃证据'))
     }
   }
-  const staleRoot = path.join(PROBE_ROOT)
-  if (existsSync(staleRoot)) {
-    const leftovers = []
-    for (const entry of (await import('node:fs')).readdirSync(staleRoot)) leftovers.push(entry)
-    check('no probe home left behind', leftovers.length === 0, leftovers.join(','))
-  }
+  // Each case already asserted its own home is gone; a global sweep would also
+  // count probe homes another process happens to be using right now.
 }
 
 // ---------------------------------------------------------------- summary

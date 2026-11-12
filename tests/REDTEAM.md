@@ -20,7 +20,8 @@ node tests/redteam-run.mjs rt-good rt-bad-patch rt-client-missing rt-engine-mism
 | `rt-hang-apply` | `apply()` 里死循环 | `CRASH_HANG` | 26 s 无 Web 地址 | 对 |
 | `rt-exit0-import` | import 阶段 `process.exit(0)` | `EXITED_CLEAN` | exit=0，无 Web 地址 | 对（不是 OK） |
 | `rt-hang-child` | import 阶段起子进程并阻塞 | `CRASH_HANG` | 26 s 无 Web 地址 | 对 |
-| `rt-spoof-url` | 自己打印假 `http://127.0.0.1:9/` 再死循环 | `CRASH_HANG` | 26 s；假地址未通过 HTTP 校验 | 对（修复前会误判 up） |
+| `rt-spoof-url` | 自己打印假 `http://127.0.0.1:9/`，随后顶层 `await` 永不完成 | `CRASH_HANG` | 26 s；假地址未通过 HTTP 校验 | 对（修复前会误判 up） |
+| `rt-spoof-url-sync` | 自己打印假地址，随后同步死循环（stdout 刷新竞态） | `CRASH_HANG` | 26 s；假地址未通过 HTTP 校验 | 对 |
 | `rt-stderr-noise` | 正常插件，但 stderr 打一行「行未激活」形状的日志 | `OK` | up，无 `did not activate` | 对（修复前误判 SKIPPED） |
 | `rt-bad-patch` | bundle patch 非法 YAML | `INSTALL_FAILED` | 安装阶段即拒绝 | 对 |
 | `rt-engine-mismatch` | `engines.dsh` 为 `>=9.0.0` | `INSTALL_FAILED` | 安装阶段即拒绝 | 对 |

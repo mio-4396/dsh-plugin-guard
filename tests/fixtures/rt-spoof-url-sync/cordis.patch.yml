@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-spoof-url-sync
+      name: rt-spoof-url-sync
+      config: {}

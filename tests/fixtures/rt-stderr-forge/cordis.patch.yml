@@ -1,0 +1,4 @@
+- insert:
+    - id: rt-stderr-forge
+      name: rt-stderr-forge
+      config: {}

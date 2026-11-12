@@ -119,3 +119,11 @@ resolveTarget(input, { profileDir, runtimeVersion }) ->
 | `lib/probe.mjs`、`lib/plan.mjs` | 探针层与目标归一 |
 | `lib/report.mjs` | 判定与渲染 |
 | `tests/selftest.mjs`、`tests/tooltest.mjs`、`tests/fixtures/*` | 验收与四类故障夹具 |
+
+## 7. 第二轮修复后的契约（REDTEAM D1–D5）
+
+- **就绪判定**：探针自己选空闲回环端口并以 `--port <P>` 启动；只接受端口等于 P 且走完真实认证的地址（303 + `Set-Cookie` → 200 页面含 `__DSH_BOOT__`）。删除“任意 URL”回退；插件自建 HTTP 或打印假 `dsh web:` 行都不算启动。
+- **清理判定**：临时 home 用 link-aware walker 删除（`lstat().isSymbolicLink()` 只 `unlink/rmdir`，不递归）；先删 `.credentials.yaml`；失败重试并把 `cleanupOk` 报到报告里；残留 30 分钟后由 `pruneStale` 清理。**禁止**用 `fs.rmSync(recursive)` 删探针 home（Electron 会跟随 junction 删掉被检查包源码）。
+- **门禁契约**：`CRASH_EXIT` / `CRASH_HANG` / `EXITED_CLEAN` / `INSTALL_FAILED` / `PROBE_UNAVAILABLE` 拒绝安装与更新；`probe:false` 时任何 fail 级 finding 也拒绝；`SKIPPED` 允许安装并在报告中说明。
+- **SKIPPED 证据**：必须同时满足 `did not activate` 汇总行、stderr 堆栈帧（`^    at `）、行名属于候选自身；否则不判 SKIPPED（防伪造）。
+- **静态 patch 校验**：补丁至少通过引号闭合、`[]{}` 配对、无制表符缩进；含块标量或 `!!js` 时该检查跳过，交由安装阶段。

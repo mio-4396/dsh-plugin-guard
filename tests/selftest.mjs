@@ -116,6 +116,8 @@ if (probeLauncher.ok !== true) {
     { name: 'rt-exit9-apply', expect: VERDICT.CRASH_EXIT },
     { name: 'rt-spoof-url', expect: VERDICT.CRASH_HANG, timeoutMs: 12_000 },
     { name: 'rt-spoof-url-sync', expect: VERDICT.CRASH_HANG, timeoutMs: 12_000 },
+    { name: 'rt-spoof-http', expect: VERDICT.CRASH_HANG, timeoutMs: 12_000 },
+    { name: 'rt-stderr-forge', expect: VERDICT.OK },
     { name: 'rt-stderr-noise', expect: VERDICT.OK },
     { name: 'rt-client-missing', expect: VERDICT.CRASH_EXIT },
   ]

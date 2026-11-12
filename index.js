@@ -78,6 +78,32 @@ function profileDirOf(ctx) {
   return existsSync(fallback) ? fallback : undefined
 }
 
+/** Verdicts that must stop an install or update outright. */
+const BLOCKING_VERDICTS = new Set([
+  VERDICT.CRASH_EXIT,
+  VERDICT.CRASH_HANG,
+  VERDICT.EXITED_CLEAN,
+  VERDICT.INSTALL_FAILED,
+  VERDICT.PROBE_UNAVAILABLE,
+])
+
+/**
+ * Whether a check result must gate an install or update.
+ *
+ * A boot that never came up (crash, hang, clean exit before readiness), an
+ * install the probe could not complete, or a probe that could not run blocks the
+ * change. So does a static check with a failure-level finding when no boot probe
+ * backed it: a missing entry or client bundle is not a warning.
+ * @param result - a check result from `checkTarget`.
+ * @returns whether the change must be refused.
+ */
+function blocksInstall(result) {
+  if (BLOCKING_VERDICTS.has(result.verdict)) return true
+  const probed = result.probe !== null && result.probe !== undefined && result.probe.status !== 'unavailable'
+  if (!probed && (result.findings ?? []).some((item) => item.level === LEVEL.FAIL)) return true
+  return false
+}
+
 /** Trim a captured output for a stored record. */
 function clip(text, limit = 2000) {
   if (typeof text !== 'string') return ''
@@ -179,6 +205,7 @@ async function checkTarget(input, options = {}) {
         launcher,
         bootTimeoutMs: options.timeoutMs,
         onLog: options.onLog,
+        expectedRows: statics.rowNames,
       })
     }
   }
@@ -347,7 +374,7 @@ async function guardedUpdate(ctx, name, version, probe, options = {}) {
   if (probe) {
     const result = await checkTarget(`${name}@${version}`, { ...options, depth: 'boot' })
     remember({ at: Date.now(), kind: 'update', target: `${name}@${version}`, verdict: result.verdict })
-    if (isCrash(result.verdict) || result.verdict === VERDICT.INSTALL_FAILED) {
+    if (blocksInstall(result)) {
       return { ok: false, refused: true, verdict: result.verdict, report: result.report }
     }
   }
@@ -474,7 +501,7 @@ export function apply(ctx) {
 
   register({
     name: 'plugin_guard_install',
-    description: 'Install a bundle only after the boot probe admits it in an isolated DSH home. Refuses when the package would crash DSH, hang the boot, fail to install, or be skipped, and leaves the profile unchanged in that case.',
+    description: 'Install a bundle only after the boot probe admits it in an isolated DSH home. Refuses when the package would crash DSH, hang the boot, exit before the Web surface is ready, fail to install, or when the probe cannot run; the profile is left unchanged. A package that boots but has a skipped row is installed and the report says so.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -521,7 +548,7 @@ export function apply(ctx) {
       }
       const result = await checkTarget(args.target, { ...baseOptions, depth: probe ? 'boot' : 'static' })
       remember({ at: Date.now(), kind: 'install', target: args.target, verdict: result.verdict })
-      if (isCrash(result.verdict) || result.verdict === VERDICT.INSTALL_FAILED) {
+      if (blocksInstall(result)) {
         return { ok: false, report: `${result.report}\n\n未改动 profile：拦截了这次安装。` }
       }
       const options = args.enabled === undefined ? {} : { enabled: args.enabled === true }
@@ -538,7 +565,7 @@ export function apply(ctx) {
 
   register({
     name: 'plugin_guard_update',
-    description: 'Update an installed bundle only after the boot probe admits the target version in an isolated DSH home. Refuses and leaves the installed version in place when the new version would crash DSH, hang, or be skipped.',
+    description: 'Update an installed bundle only after the boot probe admits the target version in an isolated DSH home. Refuses and leaves the installed version in place when the new version would crash DSH, hang, exit before the Web surface is ready, fail to install, or when the probe cannot run.',
     parameters: {
       type: 'object',
       additionalProperties: false,

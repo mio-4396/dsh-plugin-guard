@@ -118,6 +118,18 @@ const allowed = await installTool.execute({ target: path.join(fixtures, 'good') 
 check('install admits a good package', allowed.ok === true, allowed.report.slice(-200))
 check('install called the manager once', calls.filter((call) => call.kind === 'install').length === 1)
 
+// A boot that exits 0 before serving is broken, not safe.
+const exitZero = await installTool.execute({ target: path.join(fixtures, 'rt-exit0-import') })
+check('install refuses a clean exit before readiness', exitZero.ok === false && exitZero.report.includes('拦截'), exitZero.report.slice(-200))
+
+// Static-only checks still gate on failure-level findings.
+const clientMissing = await installTool.execute({ target: path.join(fixtures, 'rt-client-missing'), probe: false })
+check('static-only install refuses a missing client bundle', clientMissing.ok === false, clientMissing.report.slice(-300))
+const goodStatic = await installTool.execute({ target: path.join(fixtures, 'good'), probe: false })
+check('static-only install admits a clean package', goodStatic.ok === true, goodStatic.report.slice(-200))
+const badPatchStatic = await installTool.execute({ target: path.join(fixtures, 'rt-bad-patch'), probe: false })
+check('static-only install refuses a malformed bundle patch', badPatchStatic.ok === false && badPatchStatic.report.includes('bundle-patch-syntax'), badPatchStatic.report.slice(-300))
+
 const auditTool = tools.get('plugin_guard_audit')
 const audit = await auditTool.execute({ depth: 'static' })
 check('audit lists the bundle', audit.count === 1 && audit.report.includes('dsh-file-menu'), audit.report)

@@ -44,8 +44,8 @@ dsh plugin --profile <profile> add link:D:/dsh-tools/dsh-plugin-guard
 |---|---|
 | `plugin_guard_check` | 检查一个目标：已装插件名 / 本地目录 / `name@version` / git 地址。`depth=boot`（默认）跑真实启动，`depth=static` 只读包。 |
 | `plugin_guard_audit` | 扫当前 profile 里**每一个**已装插件；`depth=boot` 会逐个真实启动（每个约 5–10 s，可用 `only`/`limit` 收窄）。 |
-| `plugin_guard_install` | **带闸安装**：先探针，会崩就拒绝，profile 一个字节都不改；通过才调 `plugin_manager.install_bundle`。 |
-| `plugin_guard_update` | **带闸更新**：先探针目标版本，会崩就拒绝并保留旧版本；通过才调 `updateBundle`。 |
+| `plugin_guard_install` | **带闸安装**：先探针；崩溃、卡死、Web 就绪前退出、装不上、探针不可用都会拒绝，profile 一个字节都不改。通过才调 `plugin_manager.install_bundle`。 |
+| `plugin_guard_update` | **带闸更新**：同样的拒绝条件；拒绝时保留旧版本，通过才调 `updateBundle`。 |
 | `plugin_guard_status` | 自动监听记录、当前快照、最近的检查。 |
 | `plugin_guard_restore` | 用最近一次安装/更新前的快照恢复 profile 文件（需 `confirm=true`）。 |
 
@@ -89,11 +89,11 @@ plugin_guard_audit   depth: boot   limit: 5
 | `INSTALL_FAILED` | 探针里装不上（registry/网络/构建脚本） | 未知 |
 | `CRASH_EXIT` | 启动进程提前退出（附退出码） | **是** |
 | `CRASH_HANG` | 启动在超时内没有起 Web | **是** |
-| `EXITED_CLEAN` | 进程退出码 0，但 Web 没起来 | 异常 |
+| `EXITED_CLEAN` | 进程退出码 0，但 Web 没起来 | **是**（等同起不来，安装/更新会被拒） |
 | `STATIC_ONLY` | 只做了静态检查（`depth=static`） | 未知 |
 | `PROBE_UNAVAILABLE` | 找不到启动器，只能静态判断 | 未知 |
 
-带闸工具只在 `CRASH_EXIT` / `CRASH_HANG` / `INSTALL_FAILED` 时拒绝；其余判定会执行并回报风险。
+带闸工具在 `CRASH_EXIT` / `CRASH_HANG` / `EXITED_CLEAN` / `INSTALL_FAILED` / `PROBE_UNAVAILABLE` 时拒绝；`probe:false` 走纯静态时，任何 fail 级发现（入口缺失、bundle patch 结构不合法、客户端缺失、版本不满足等）同样拒绝。`SKIPPED` 会安装并回报；若想连“装了不生效”也拦住，看报告里的 `SKIPPED` 再手动放弃即可。
 
 ## 自动监听
 
@@ -109,9 +109,9 @@ plugin_guard_audit   depth: boot   limit: 5
 1. 临时目录 `%TEMP%\dsh-plugin-guard\home-<rand>` 作为 `DSH_HOME`；
 2. `<启动器> <probe> --from-default-profile web --dump-config` 建 profile（约 0.3 s）；
 3. `<启动器> plugin --profile <probe> add <spec>` 装候选（本地 `link:` 约 1 s，registry 初次取决于网络）；
-4. `<启动器> --profile <probe> --port 0 --no-open` 真实启动，轮询 stdout 的 Web 地址；
-5. 地址必须**真实 HTTP 可连通**才算启动成功（插件自己打印的假地址骗不过探针）；
-6. 结束：`taskkill /T /F` 杀进程树、删临时 `DSH_HOME`；超过 2 小时的残留目录在下次运行时清理。
+4. 探针自己挑一个空闲回环端口，用 `--port <P>` 启动，插件不能决定 Web 面在哪；
+5. 只有带 `dsh web:` 的行、端口等于 P、并且**真实拿到 DSH 应用外壳**（303+Set-Cookie → 200 页面含 `__DSH_BOOT__`）才算启动成功；插件自建 HTTP 或伪造地址都不算；
+6. 结束：`taskkill /T /F` 杀进程树，再用**不跟随 junction 的安全 walker** 删除临时 `DSH_HOME`（Electron 的 `rmSync` 会顺着 junction 删掉被检查包的源码，这是实测过的坑）；删除失败会在报告里写明，残留目录 30 分钟后清理。
 
 子进程环境：`ELECTRON_RUN_AS_NODE=1`、独立 `DSH_HOME`，并剥掉继承的 `DSH_PROFILE*` / `DSH_SESSION_ID` / `DSH_WEB_URL` / `DSH_SHELL`，避免连到正在运行的实例。
 
@@ -126,9 +126,10 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 
 | 检查 | 结果 |
 |---|---|
-| `node tests\selftest.mjs` | 59/59 通过（含 11 类真实启动夹具：OK / SKIPPED / CRASH_EXIT / CRASH_HANG / EXITED_CLEAN / INSTALL_FAILED，探针目录零残留） |
-| `node tests\tooltest.mjs` | 25/25 通过（六个工具、带闸安装拦截、快照与恢复、自动静态复核、profile 服务回退） |
-| 对抗矩阵 `tests\REDTEAM.md` | 12 个对手夹具全部判对；期间修掉「假 Web 地址（同步/异步两种）」「stderr 形状噪声」「探针自伤竞态」三个缺陷 |
+| `node tests\selftest.mjs` | 65/65 通过（含 15 类真实启动夹具：OK / SKIPPED / CRASH_EXIT / CRASH_HANG / EXITED_CLEAN / INSTALL_FAILED，探针目录零残留） |
+| `node tests\tooltest.mjs` | 29/29 通过（六个工具、带闸安装拦截、静态 fail 拦截、快照与恢复、自动静态复核、profile 服务回退） |
+| `node tests\junction-safety.mjs` | 7/7 通过：**Electron 下删除探针 home 后，被 link 的本地包源码完好**（回归 D1） |
+| 对抗矩阵 `tests\REDTEAM.md` | 两轮共 15 个对手夹具；第一轮修掉假地址/噪声/自伤竞态，第二轮修掉 junction 删源码、自建 HTTP 伪造就绪、EXITED_CLEAN 放行、静态 fail 放行、伪造 SKIPPED |
 | 运行中实例 `plugin_guard_check` 坏包 | `CRASH_EXIT`，退出码 9，create 345ms · install 1082ms · boot 2479ms |
 | 运行中实例 `plugin_guard_check` 正常包 | `OK`，启动成功 `http://127.0.0.1:61086/…`，create 330ms · install 1027ms · boot 3717ms |
 | 安装到 Desktop profile | `dsh plugin --profile desktop add link:…` 成功，六个工具在运行中的会话里立即出现 |
@@ -138,15 +139,19 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 - 探针跑的是 **web 模板**的合成，不是 Desktop 的真实组合。只依赖 Desktop 专属服务的插件在探针里可能被判 `SKIPPED`，但装到 Desktop 是好的——这类要结合 `plugin_guard_audit depth=static` 与真实重启判断。
 - registry 包的探针要真的下载一次；首次检查受网络影响，之后有 pnpm store 缓存。
 - 静态层只扫**运行时导入图**（入口与其相对 import），`scripts/`、`tests/` 不参与，避免把构建脚本里的 `process.exit` 误报成启动风险。
-- 检测的是“会不会崩”，不是“安不安全”：插件代码在进程内运行，本插件不做沙箱，也不审查恶意行为。
+- `SKIPPED` 依赖 stderr 的激活汇总 + 堆栈帧；若上游改成只写日志文件，或插件刻意伪造带堆栈的汇总，判定会退化（伪造只会让它自己被判“不生效”，不会掩盖崩溃）。
+- 探针与插件同进程、同权限：理论上插件可以自建服务并伪装 DSH 外壳。当前用「探针选定端口 + 303/Set-Cookie + `__DSH_BOOT__` 页面标记」提高门槛，但**本插件不是恶意代码沙箱**。
+- 同一台机器上并发跑两个真实启动可能互相抢资源；探针 home 与 profile 名都带随机后缀，但没有跨进程锁。
+- 检测的是“会不会崩”，不是“安不安全”：插件代码在进程内运行，不做沙箱，也不审查恶意行为。
 
 ## 开发
 
 ```powershell
 cd D:\dsh-tools\dsh-plugin-guard
-node tests\selftest.mjs   # 59 项：semver / manifest / scan / plan + 11 类真实启动夹具
-node tests\tooltest.mjs   # 25 项：六个工具的判定、带闸安装、快照与恢复、自动复核
-node tests\redteam-run.mjs rt-good rt-spoof-url …   # 对抗矩阵，见 tests/REDTEAM.md
+node tests\selftest.mjs        # 65 项：semver / manifest / scan / plan + 15 类真实启动夹具
+node tests\tooltest.mjs        # 29 项：六个工具的判定、带闸安装、静态 fail 拦截、快照与恢复
+node tests\junction-safety.mjs # 7 项：Electron 下清理不跟随 junction（防删源码）
+node tests\redteam-run.mjs rt-good rt-spoof-http …   # 对抗矩阵，见 tests/REDTEAM.md
 ```
 
 目录：
@@ -159,6 +164,6 @@ lib/scan.mjs        运行时代码危险模式扫描
 lib/plan.mjs        目标归一（名字/目录/link:/spec）
 lib/probe.mjs       隔离探针与真实启动
 lib/report.mjs      判定与渲染
-tests/fixtures/     12 类故障/对抗夹具（正常、退出、卡死、import/apply 抛错、假地址、噪声、缺客户端…）
+tests/fixtures/     15 类故障/对抗夹具（正常、退出、卡死、import/apply 抛错、假地址、自建 HTTP、噪声、伪造汇总、缺客户端…）
 DESIGN.md           冻结的接口与实测语义
 ```

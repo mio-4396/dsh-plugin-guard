@@ -11,6 +11,15 @@
     "preflight",
     "crash"
   ],
+  "homepage": "https://github.com/mio-4396/dsh-plugin-guard#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mio-4396/dsh-plugin-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mio-4396/dsh-plugin-guard/issues"
+  },
+  "author": "mio-4396",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
@@ -25,7 +34,8 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
-    "DESIGN.md"
+    "DESIGN.md",
+    "LICENSE"
   ],
   "icon": "./icon.svg",
   "license": "MIT",

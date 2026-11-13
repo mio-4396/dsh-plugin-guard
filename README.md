@@ -23,14 +23,25 @@ DSH 的 `plugin_manager` 已经会在安装前拦掉 `engines.dsh` / peer 版本
 
 ## 安装
 
-正常路径（推荐）：在 **Plugins** 页面安装，或让 Agent 调 `plugin_manager`：
+从 GitHub 安装（仓库公开）：
+
+```text
+plugin_manager install_bundle
+target: github:mio-4396/dsh-plugin-guard
+```
+
+```powershell
+dsh plugin --profile <profile> add github:mio-4396/dsh-plugin-guard
+```
+
+本地目录安装（开发时推荐）：在 **Plugins** 页面安装，或 `plugin_manager`：
 
 ```text
 action: install_bundle
-target: D:\dsh-tools\dsh-plugin-guard      # 本地目录；发布后可用 name@version
+target: D:\dsh-tools\dsh-plugin-guard
 ```
 
-开发时可以直接 link（改动源码即生效）：
+改动源码即生效可以直接 link：
 
 ```powershell
 dsh plugin --profile <profile> add link:D:/dsh-tools/dsh-plugin-guard

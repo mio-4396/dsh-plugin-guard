@@ -57,6 +57,7 @@ dsh plugin --profile <profile> add link:D:/dsh-tools/dsh-plugin-guard
 | `plugin_guard_audit` | 扫当前 profile 里**每一个**已装插件；`depth=boot` 会逐个真实启动（每个约 5–10 s，可用 `only`/`limit` 收窄）。 |
 | `plugin_guard_install` | **带闸安装**：先探针；崩溃、卡死、Web 就绪前退出、装不上、探针不可用都会拒绝，profile 一个字节都不改。通过才调 `plugin_manager.install_bundle`。 |
 | `plugin_guard_update` | **带闸更新**：同样的拒绝条件；拒绝时保留旧版本，通过才调 `updateBundle`。 |
+| `plugin_guard_rehearse` | **升级前演练**：用候选 DSH 运行时（安装目录，或更新器缓存的安装包——解包但不安装）启动当前整套插件，报告能否启动、哪些插件会被拒绝或跳过。 |
 | `plugin_guard_status` | 自动监听记录、当前快照、最近的检查。 |
 | `plugin_guard_restore` | 用最近一次安装/更新前的快照恢复 profile 文件（需 `confirm=true`）。 |
 
@@ -103,6 +104,9 @@ plugin_guard_audit   depth: boot   limit: 5
 | `EXITED_CLEAN` | 进程退出码 0，但 Web 没起来 | **是**（等同起不来，安装/更新会被拒） |
 | `STATIC_ONLY` | 只做了静态检查（`depth=static`） | 未知 |
 | `PROBE_UNAVAILABLE` | 找不到启动器，只能静态判断 | 未知 |
+| `UPGRADE_OK` | 升级演练：候选运行时能带当前插件启动，且无插件失效 | 否 |
+| `UPGRADE_WARN` | 升级演练：能启动，但有插件会被拒绝或跳过 | 否 |
+| `UPGRADE_CRASH` | 升级演练：候选运行时起不来 | **是** |
 
 带闸工具在 `CRASH_EXIT` / `CRASH_HANG` / `EXITED_CLEAN` / `INSTALL_FAILED` / `PROBE_UNAVAILABLE` 时拒绝；`probe:false` 走纯静态时，任何 fail 级发现（入口缺失、bundle patch 结构不合法、客户端缺失、版本不满足等）同样拒绝。`SKIPPED` 会安装并回报；若想连“装了不生效”也拦住，看报告里的 `SKIPPED` 再手动放弃即可。
 
@@ -114,6 +118,28 @@ plugin_guard_audit   depth: boot   limit: 5
 2. 在 `plugin-manager/changed` 时记录这次变更；`plugin_guard_status` 里能看到全部记录。
 
 事后如果发现 DSH 起不来，用 `plugin_guard_restore confirm=true` 回到最近一次快照。自动监听**不会**静默跑真实启动（每次启动一个 Web 太贵），所以“带闸安装/更新”仍然是拿到强保证的入口。
+
+## 升级前演练（DSH 本体）
+
+DSH 本体升级不在「插件安装/更新」的覆盖面里：插件要等运行时启动后才有机会运行。`plugin_guard_rehearse` 在升级前把这件事演练一遍：
+
+1. 候选运行时：传 `source`（安装目录或更新器缓存的 `.exe`）；不传就用更新器 `pending` 里最新的安装包；
+2. 安装包用 7-Zip 解到临时目录（**不运行安装器、不碰真实安装**），约 17 s、1.2 GB；
+3. 复制当前 profile 的 `package.json` / `cordis.patch.yml` / `pnpm-lock.yaml` 等进临时 `DSH_HOME`，用候选运行时自带的 pnpm 装同一套依赖（约 3–5 s）；
+4. 用候选运行时真实启动 Web（端口由探针挑，必须拿到 DSH 外壳才算成功），提前退出 / 超时即判定；
+5. 逐个包比对 `engines.dsh` / DSH peer 与候选版本，列出升级后会被拒绝或跳过的插件；
+6. 删除临时 profile 与解包产物。
+
+```text
+plugin_guard_rehearse
+plugin_guard_rehearse source: D:\Downloads\deepseek-harness-0.3.0-win-x64.exe
+```
+
+判定：`UPGRADE_OK`（能启动且无插件失效）/ `UPGRADE_WARN`（能启动，但有插件会被拒绝或跳过）/ `UPGRADE_CRASH`（升级后起不来）/ `INSTALL_FAILED` / `RUNTIME_UNRESOLVED` / `PROFILE_UNAVAILABLE`。
+
+需要：7-Zip（找不到会提示设置 `DSH_GUARD_7Z`）、约 1.5 GB 临时空间、20–60 s（安装包解包占大头）。
+
+演练的边界：复制的是**当前 profile**；候选版本与当前相同时只能验证流程与现有插件加载，不能预测新版本行为；启动崩溃时不会自动二分定位，先看 stderr 再用 `plugin_guard_check` 逐个查。
 
 ## 探针是怎么跑的
 
@@ -133,17 +159,20 @@ $env:DSH_GUARD_LAUNCHER_EXE = 'D:\DeepSeek Harness\DeepSeek Harness.exe'
 $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_modules\@deepseek-ai\dsh-desktop-host\lib\cli.js'
 ```
 
-## 验证记录（本机实测，2026-11-12）
+## 验证记录（本机实测，2026-11-14）
 
 | 检查 | 结果 |
 |---|---|
 | `node tests\selftest.mjs` | 65/65 通过（含 15 类真实启动夹具：OK / SKIPPED / CRASH_EXIT / CRASH_HANG / EXITED_CLEAN / INSTALL_FAILED，探针目录零残留） |
-| `node tests\tooltest.mjs` | 29/29 通过（六个工具、带闸安装拦截、静态 fail 拦截、快照与恢复、自动静态复核、profile 服务回退） |
+| `node tests\tooltest.mjs` | 30/30 通过（七个工具、带闸安装拦截、静态 fail 拦截、快照与恢复、自动静态复核、profile 服务回退） |
+| `node tests\rehearse.test.mjs` | 19/19 通过（asar 读取、engines/peer 兼容比对、跳过行解析、运行时解析）；加 `DSH_GUARD_REHEARSE=1` 多 3 项真实演练 |
 | `node tests\junction-safety.mjs` | 7/7 通过：**Electron 下删除探针 home 后，被 link 的本地包源码完好**（回归 D1） |
 | 对抗矩阵 `tests\REDTEAM.md` | 两轮共 15 个对手夹具；第一轮修掉假地址/噪声/自伤竞态，第二轮修掉 junction 删源码、自建 HTTP 伪造就绪、EXITED_CLEAN 放行、静态 fail 放行、伪造 SKIPPED |
 | 运行中实例 `plugin_guard_check` 坏包 | `CRASH_EXIT`，退出码 9，create 345ms · install 1082ms · boot 2479ms |
 | 运行中实例 `plugin_guard_check` 正常包 | `OK`，启动成功 `http://127.0.0.1:61086/…`，create 330ms · install 1027ms · boot 3717ms |
-| 安装到 Desktop profile | `dsh plugin --profile desktop add link:…` 成功，六个工具在运行中的会话里立即出现 |
+| 安装到 Desktop profile | `dsh plugin --profile desktop add link:…` 成功，七个工具在运行中的会话里立即出现 |
+| 升级演练（安装目录） | `UPGRADE_OK`：install 3.1 s · boot 2.6 s · 15 个包全部兼容 · 总 5.8 s |
+| 升级演练（更新器安装包） | `UPGRADE_OK`：解包 + install + boot 总 24.5 s（解包约 17 s）· 1.5 GB 临时目录已删除 |
 
 ## 限制（说实话的部分）
 
@@ -153,6 +182,7 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 - `SKIPPED` 依赖 stderr 的激活汇总 + 堆栈帧；若上游改成只写日志文件，或插件刻意伪造带堆栈的汇总，判定会退化（伪造只会让它自己被判“不生效”，不会掩盖崩溃）。
 - 探针与插件同进程、同权限：理论上插件可以自建服务并伪装 DSH 外壳。当前用「探针选定端口 + 303/Set-Cookie + `__DSH_BOOT__` 页面标记」提高门槛，但**本插件不是恶意代码沙箱**。
 - 同一台机器上并发跑两个真实启动可能互相抢资源；探针 home 与 profile 名都带随机后缀，但没有跨进程锁。
+- 升级演练需要 7-Zip（`DSH_GUARD_7Z` 可指定）与约 1.5 GB 临时空间；候选版本与当前相同只能验证流程，不能预测新版本行为；启动失败时不自动二分定位。
 - 检测的是“会不会崩”，不是“安不安全”：插件代码在进程内运行，不做沙箱，也不审查恶意行为。
 
 ## 开发
@@ -160,7 +190,8 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 ```powershell
 cd D:\dsh-tools\dsh-plugin-guard
 node tests\selftest.mjs        # 65 项：semver / manifest / scan / plan + 15 类真实启动夹具
-node tests\tooltest.mjs        # 29 项：六个工具的判定、带闸安装、静态 fail 拦截、快照与恢复
+node tests\tooltest.mjs        # 30 项：七个工具的判定、带闸安装、静态 fail 拦截、快照与恢复
+node tests\rehearse.test.mjs   # 19 项：asar / 兼容比对 / 跳过行 / 运行时解析（DSH_GUARD_REHEARSE=1 加真实演练）
 node tests\junction-safety.mjs # 7 项：Electron 下清理不跟随 junction（防删源码）
 node tests\redteam-run.mjs rt-good rt-spoof-http …   # 对抗矩阵，见 tests/REDTEAM.md
 ```
@@ -168,12 +199,18 @@ node tests\redteam-run.mjs rt-good rt-spoof-http …   # 对抗矩阵，见 test
 目录：
 
 ```text
-index.js            Host 插件：六个工具 + 事件监听 + 快照
+index.js            Host 插件：七个工具 + 事件监听 + 快照
 lib/semver.mjs      版本范围子集
 lib/manifest.mjs    manifest / 入口 / bundle patch / engines / peers
 lib/scan.mjs        运行时代码危险模式扫描
 lib/plan.mjs        目标归一（名字/目录/link:/spec）
 lib/probe.mjs       隔离探针与真实启动
+lib/rehearse.mjs    升级前演练：复制 profile、兼容比对、启动候选运行时
+lib/runtime.mjs     运行时解析：安装目录 / 更新器安装包（7-Zip 解包）
+lib/asar.mjs        不依赖 Electron 读取 app.asar
+lib/fs-safe.mjs     不跟随 junction 的安全删除
+lib/process.mjs     子进程环境、终止与命令执行
+lib/http.mjs        DSH Web 就绪证明（303+cookie+`__DSH_BOOT__`）
 lib/report.mjs      判定与渲染
 tests/fixtures/     15 类故障/对抗夹具（正常、退出、卡死、import/apply 抛错、假地址、自建 HTTP、噪声、伪造汇总、缺客户端…）
 DESIGN.md           冻结的接口与实测语义

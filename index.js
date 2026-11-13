@@ -36,7 +36,8 @@ import path from 'node:path'
 import { analyzeManifest, LEVEL } from './lib/manifest.mjs'
 import { resolveTarget } from './lib/plan.mjs'
 import { createLauncher, runBootProbe } from './lib/probe.mjs'
-import { isCrash, renderAudit, renderCheck, verdictFrom, verdictLabel, VERDICT } from './lib/report.mjs'
+import { rehearseUpgrade } from './lib/rehearse.mjs'
+import { isCrash, renderAudit, renderCheck, renderRehearsal, verdictFrom, verdictLabel, VERDICT } from './lib/report.mjs'
 import { scanPackage } from './lib/scan.mjs'
 
 export const name = 'plugin-guard'
@@ -322,6 +323,24 @@ async function autoStaticAudit(ctx, options) {
   return summary
 }
 
+/** The newest installer the Desktop updater has staged, if any. */
+function pendingInstaller() {
+  const local = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
+  const dir = path.join(local, '@deepseek-aidsh-desktop-updater', 'pending')
+  try {
+    const candidates = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.exe$/i.test(entry.name))
+      .map((entry) => {
+        const file = path.join(dir, entry.name)
+        return { file, mtime: statSync(file).mtimeMs }
+      })
+      .sort((left, right) => right.mtime - left.mtime)
+    return candidates[0]?.file
+  } catch {
+    return undefined
+  }
+}
+
 /** Tool output for one check. */
 function checkOutput(result) {
   return {
@@ -595,6 +614,67 @@ export function apply(ctx) {
       }
       if (result.ok !== true) return { ok: false, report: `更新失败：${result.reason}` }
       return { ok: true, report: `${args.name}@${args.version} 的更新已提交：${JSON.stringify(result.outcome?.application ?? result.outcome?.status ?? 'unknown')}` }
+    },
+  })
+
+  register({
+    name: 'plugin_guard_rehearse',
+    description: 'Rehearse a DSH upgrade before taking it: boot the current plugin set on a candidate DSH runtime in an isolated DSH home, then report whether it starts and which plugins the new version would deny or skip. The candidate may be an installed directory or a staged updater installer (extracted with 7-Zip, never installed); extraction needs about 1.2 GB of temp space and the boot copies the active profile, so it is read-only for the real profile.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        source: {
+          type: 'string',
+          description: 'Candidate runtime: an installed DSH directory, or an installer .exe. Defaults to the newest installer staged in the updater cache.',
+        },
+        timeoutMs: {
+          type: 'integer',
+          description: 'Boot deadline in milliseconds; default 180000 (a full profile boots slower than a bare probe).',
+        },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['ok', 'verdict', 'newVersion', 'currentVersion', 'report'],
+        properties: {
+          ok: { type: 'boolean', description: 'Whether the rehearsal ran and the candidate started' },
+          verdict: { type: 'string', description: 'UPGRADE_OK | UPGRADE_WARN | UPGRADE_CRASH | INSTALL_FAILED | RUNTIME_UNRESOLVED | PROFILE_UNAVAILABLE | PROBE_FAILED' },
+          newVersion: { type: 'string', description: 'Version the candidate runtime reports' },
+          currentVersion: { type: 'string', description: 'Version of the running DSH' },
+          report: { type: 'string', description: 'Rendered rehearsal report' },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.report }],
+    },
+    async execute(args) {
+      const source = typeof args.source === 'string' && args.source !== '' ? args.source : pendingInstaller()
+      if (source === undefined) {
+        return {
+          ok: false,
+          verdict: 'RUNTIME_UNRESOLVED',
+          newVersion: '',
+          currentVersion: version ?? '',
+          report: '没有给出候选运行时，也没有在更新器缓存里找到安装包。请传 source（安装目录或安装包路径）。',
+        }
+      }
+      const result = await rehearseUpgrade({
+        source,
+        profileDir: baseOptions.profileDir,
+        currentLauncher: launcher,
+        currentVersion: version,
+        timeoutMs: args.timeoutMs,
+      })
+      remember({ at: Date.now(), kind: 'rehearse', target: `${path.basename(source)} → ${result.runtime?.version ?? '?'}`, verdict: result.verdict })
+      return {
+        ok: result.ok === true,
+        verdict: result.verdict,
+        newVersion: result.runtime?.version ?? '',
+        currentVersion: version ?? '',
+        report: renderRehearsal(result),
+      }
     },
   })
 

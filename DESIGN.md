@@ -127,3 +127,16 @@ resolveTarget(input, { profileDir, runtimeVersion }) ->
 - **门禁契约**：`CRASH_EXIT` / `CRASH_HANG` / `EXITED_CLEAN` / `INSTALL_FAILED` / `PROBE_UNAVAILABLE` 拒绝安装与更新；`probe:false` 时任何 fail 级 finding 也拒绝；`SKIPPED` 允许安装并在报告中说明。
 - **SKIPPED 证据**：必须同时满足 `did not activate` 汇总行、stderr 堆栈帧（`^    at `）、行名属于候选自身；否则不判 SKIPPED（防伪造）。
 - **静态 patch 校验**：补丁至少通过引号闭合、`[]{}` 配对、无制表符缩进；含块标量或 `!!js` 时该检查跳过，交由安装阶段。
+
+## 8. 升级前演练契约（v0.2.0）
+
+`plugin_guard_rehearse` 验证的是「换一个 DSH 运行时后，当前这套插件能不能起来」，与插件安装/更新门禁是两条独立的路径。
+
+- **候选运行时**：`resolveRuntime(source)` 接受安装目录或更新器安装包（`.exe`）。安装包只用 7-Zip 解到临时目录（`$PLUGINSDIR/app-64.7z` → app 树），**从不运行安装器**；找不到 7-Zip 时返回 `RUNTIME_UNRESOLVED`，可用 `DSH_GUARD_7Z` 指定。
+- **版本与 CLI**：直接读 `resources/app.asar` 的头部与 `dsh/package.json`（`lib/asar.mjs`，不依赖 Electron），CLI 入口按 `dsh-desktop-host/lib/cli.js` 查找，并转换为可被 Electron 打开的 asar 文件系统路径。
+- **隔离**：把当前 profile 的 `package.json`、`cordis.patch.yml`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`、`compatibility.json` 复制进临时 `DSH_HOME`，用候选运行时自带的 pnpm 装同一套依赖；真实 profile 只读。
+- **就绪**：与插件探针同一套证明——探针挑端口、只认该端口、必须完成 303+Set-Cookie → 200 且页面含 `__DSH_BOOT__`。
+- **兼容比对**：对 profile 里每个 bundle/dependency 读 `engines.dsh`（优先）或 DSH peer 范围，用候选版本做 semver 判断，输出会被拒绝/跳过的清单。
+- **判定**：`UPGRADE_OK` / `UPGRADE_WARN` / `UPGRADE_CRASH` / `INSTALL_FAILED` / `RUNTIME_UNRESOLVED` / `PROFILE_UNAVAILABLE` / `PROBE_FAILED`。`ok` 仅在 OK/WARN 时为真。
+- **清理**：临时 profile 与解包产物都用安全 walker 删除；`cleanupOk` 上报。
+- **边界**：不自动二分崩溃插件；候选版本与当前相同时只验证流程与现有插件加载。

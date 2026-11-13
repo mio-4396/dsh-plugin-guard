@@ -93,7 +93,9 @@ const ctx = {
 apply(ctx)
 
 const tools = new Map(registry.map((definition) => [definition.name, definition]))
-check('registers six tools', tools.size === 6, [...tools.keys()].join(','))
+const expectedTools = ['plugin_guard_check', 'plugin_guard_audit', 'plugin_guard_install', 'plugin_guard_update', 'plugin_guard_rehearse', 'plugin_guard_status', 'plugin_guard_restore']
+check('registers the seven tools', tools.size === 7 && expectedTools.every((name) => tools.has(name)), [...tools.keys()].join(','))
+check('rehearse tool declares its output contract', typeof tools.get('plugin_guard_rehearse')?.output?.render === 'function')
 check('register shapes carry output.render', [...tools.values()].every((tool) => typeof tool.output?.render === 'function'))
 
 const checkTool = tools.get('plugin_guard_check')

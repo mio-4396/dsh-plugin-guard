@@ -165,7 +165,7 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 |---|---|
 | `node tests\selftest.mjs` | 65/65 通过（含 15 类真实启动夹具：OK / SKIPPED / CRASH_EXIT / CRASH_HANG / EXITED_CLEAN / INSTALL_FAILED，探针目录零残留） |
 | `node tests\tooltest.mjs` | 30/30 通过（七个工具、带闸安装拦截、静态 fail 拦截、快照与恢复、自动静态复核、profile 服务回退） |
-| `node tests\rehearse.test.mjs` | 19/19 通过（asar 读取、engines/peer 兼容比对、跳过行解析、运行时解析）；加 `DSH_GUARD_REHEARSE=1` 多 3 项真实演练 |
+| `node tests\rehearse.test.mjs` | 21/21 通过（asar 对齐头部、engines/peer 兼容比对、跳过行解析、运行时解析）；加 `DSH_GUARD_REHEARSE=1` 多 3 项真实演练 |
 | `node tests\junction-safety.mjs` | 7/7 通过：**Electron 下删除探针 home 后，被 link 的本地包源码完好**（回归 D1） |
 | 对抗矩阵 `tests\REDTEAM.md` | 两轮共 15 个对手夹具；第一轮修掉假地址/噪声/自伤竞态，第二轮修掉 junction 删源码、自建 HTTP 伪造就绪、EXITED_CLEAN 放行、静态 fail 放行、伪造 SKIPPED |
 | 运行中实例 `plugin_guard_check` 坏包 | `CRASH_EXIT`，退出码 9，create 345ms · install 1082ms · boot 2479ms |
@@ -173,6 +173,7 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 | 安装到 Desktop profile | `dsh plugin --profile desktop add link:…` 成功，七个工具在运行中的会话里立即出现 |
 | 升级演练（安装目录） | `UPGRADE_OK`：install 3.1 s · boot 2.6 s · 15 个包全部兼容 · 总 5.8 s |
 | 升级演练（更新器安装包） | `UPGRADE_OK`：解包 + install + boot 总 24.5 s（解包约 17 s）· 1.5 GB 临时目录已删除 |
+| 升级演练（真实 0.2.2-rc.3 安装包） | `UPGRADE_OK`：sha512 与官方 feed 一致 · install 4.5 s · boot 2.8 s · 0 个插件不兼容、0 个被跳过；唯一读不到清单的 `dsh-experimental-agent-team-profile` 在 rc.3 已并入 base |
 
 ## 限制（说实话的部分）
 
@@ -191,7 +192,7 @@ $env:DSH_GUARD_LAUNCHER_CLI = 'D:\DeepSeek Harness\resources\app.asar\dsh\node_m
 cd D:\dsh-tools\dsh-plugin-guard
 node tests\selftest.mjs        # 65 项：semver / manifest / scan / plan + 15 类真实启动夹具
 node tests\tooltest.mjs        # 30 项：七个工具的判定、带闸安装、静态 fail 拦截、快照与恢复
-node tests\rehearse.test.mjs   # 19 项：asar / 兼容比对 / 跳过行 / 运行时解析（DSH_GUARD_REHEARSE=1 加真实演练）
+node tests\rehearse.test.mjs   # 21 项：asar（含对齐头部）/ 兼容比对 / 跳过行 / 运行时解析（DSH_GUARD_REHEARSE=1 加真实演练）
 node tests\junction-safety.mjs # 7 项：Electron 下清理不跟随 junction（防删源码）
 node tests\redteam-run.mjs rt-good rt-spoof-http …   # 对抗矩阵，见 tests/REDTEAM.md
 ```

@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-guard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Preflight a DSH plugin install or update: boot it in an isolated probe profile and refuse the change when DSH would crash or the plugin would be skipped.",
   "keywords": [

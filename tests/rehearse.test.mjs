@@ -43,6 +43,27 @@ if (existsSync(installedAsar)) {
   console.log('SKIP asar checks: DSH installation not found')
 }
 
+// A header that ends off a 4-byte boundary (0.2.2-rc.3) must still resolve its
+// data base: `8 + headerSize`, not the end of the JSON text.
+{
+  const paddedRoot = mkdtempSync(path.join(os.tmpdir(), 'guard-asar-'))
+  const paddedPath = path.join(paddedRoot, 'padded.asar')
+  const payload = Buffer.from('{"hello":"world"}', 'utf8')
+  const headerText = JSON.stringify({ files: { 'a.json': { offset: '0', size: String(payload.length) } } })
+  const padded = Math.ceil(headerText.length / 4) * 4
+  const bytes = Buffer.alloc(8 + padded + payload.length, 0x20)
+  bytes.writeUInt32LE(4, 0)
+  bytes.writeUInt32LE(padded, 4)
+  bytes.write(headerText, 8, 'utf8')
+  bytes.write(payload.toString('utf8'), 8 + padded, 'utf8')
+  writeFileSync(paddedPath, bytes)
+  const paddedAsar = openAsar(paddedPath)
+  const read = paddedAsar === null ? null : paddedAsar.readFile('a.json')
+  check('asar handles a padded header', read !== null && read.toString('utf8') === payload.toString('utf8'), read?.toString('utf8'))
+  check('asar uses the aligned data base', paddedAsar?.base === 8 + padded, String(paddedAsar?.base))
+  rmSync(paddedRoot, { recursive: true, force: true })
+}
+
 // ------------------------------------------------------- compatibility
 const root = mkdtempSync(path.join(os.tmpdir(), 'guard-rehearse-'))
 const profileDir = path.join(root, 'profile')
